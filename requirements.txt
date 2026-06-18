@@ -1,0 +1,15 @@
+fastapi
+python-multipart
+pydantic<3.0
+pydantic-settings
+orjson
+gunicorn
+uvicorn
+python-dotenv
+huggingface_hub
+torch~=2.3.1
+torchvision==0.18.1
+colored==2.3.1
+polygraphy==0.49.26
+--extra-index-url https://pypi.nvidia.com
+tensorrt_cu12==10.15.1.29

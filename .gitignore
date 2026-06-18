@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+*.egg
+
+# Virtual env
+venv*/
+.venv/
+
+# Environment
+.env
+
+# Logs
+logs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Model files (engines built at deploy time)
+models/*
+!models/.gitkeep
+!models/onnx/
+!models/onnx/.gitkeep
+models/onnx/*.onnx
+
+# Docker
+*.tar
