@@ -1,4 +1,4 @@
-import torch, io
+import torch, io, os
 from torch.cuda import nvtx
 from fastapi import UploadFile
 from PIL import Image
@@ -16,7 +16,7 @@ from polygraphy.backend.trt import (
 from polygraphy.logger import G_LOGGER
 import tensorrt as trt
 from logging import error
-import copy
+import copy, re
 
 G_LOGGER.module_severity = G_LOGGER.ERROR
 
@@ -41,7 +41,18 @@ if np.version.full_version >= "1.24.0":
 else:
     numpy_to_torch_dtype_dict[np.bool] = torch.bool
 
-def get_final_resolutions(width, height, resize_to):
+def _get_model_scale(model_name):
+    """Parse scale factor from model name: '4x-UltraSharp' → 4, '2x-ESRGAN' → 2, defaults to 4."""
+    m = re.search(r'(\d+)x', model_name)
+    if m:
+        return int(m.group(1))
+    m = re.search(r'x(\d+)', model_name)
+    if m:
+        return int(m.group(1))
+    return 4
+
+
+def get_final_resolutions(width, height, resize_to, scale=4):
     final_width = None
     final_height = None
     aspect_ratio = float(width/height)
@@ -60,8 +71,8 @@ def get_final_resolutions(width, height, resize_to):
             final_width = 3840
             final_height = 2160
         case "none":
-            final_width = width*4
-            final_height = height*4
+            final_width = width*scale
+            final_height = height*scale
 
         case _:
             resize_factor = float(resize_to.split('x')[0])
@@ -238,12 +249,15 @@ def upscale_image(engine: Engine, image: UploadFile, resize_to: str, format: str
     for dim in (H, W):
         if dim > IMAGE_DIM_MAX or dim < IMAGE_DIM_MIN:
             raise ValueError(f"Input image dimensions fall outside of the supported range: {IMAGE_DIM_MIN} to {IMAGE_DIM_MAX} px!\nImage dimensions: {W}px by {H}px")
-    
-    final_width, final_height = get_final_resolutions(W, H, resize_to)
+
+    model_name = os.path.basename(engine.engine_path)
+    scale = _get_model_scale(model_name)
+
+    final_width, final_height = get_final_resolutions(W, H, resize_to, scale)
 
     shape_dict = {
         "input": {"shape": (1, 3, H, W)},
-        "output": {"shape": (1, 3, H*4, W*4)},
+        "output": {"shape": (1, 3, H*scale, W*scale)},
     }
 
     engine.activate()
@@ -252,7 +266,7 @@ def upscale_image(engine: Engine, image: UploadFile, resize_to: str, format: str
     cudaStream = torch.cuda.current_stream().cuda_stream
     images_list = list(torch.split(images_bchw, split_size_or_sections=1))
     upscaled_frames = torch.empty((B, C, final_height, final_width), dtype=torch.float32, device='cuda')
-    must_resize = W*4 != final_width or H*4 != final_height
+    must_resize = W*scale != final_width or H*scale != final_height
 
     for i, img in enumerate(images_list):
         result = engine.infer({"input": img}, cudaStream)
@@ -260,14 +274,16 @@ def upscale_image(engine: Engine, image: UploadFile, resize_to: str, format: str
 
         if must_resize:
             result = torch.nn.functional.interpolate(
-                result, 
+                result,
                 size=(final_height, final_width),
                 mode='bicubic',
                 antialias=True
             )
         upscaled_frames[i] = result
-    
+
     engine.reset()
+    torch.cuda.empty_cache()
+    torch.cuda.ipc_collect()
 
     final_image = convert_to_pil(upscaled_frames[0].detach().cpu())
     image_byte_arr = io.BytesIO()
