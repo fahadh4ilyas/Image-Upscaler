@@ -2,6 +2,8 @@
 
 GPU-accelerated 4× image upscaling via a FastAPI REST service, using TensorRT-optimized ESRGAN models.
 
+> Inspired by [ComfyUI-Upscaler-Tensorrt](https://github.com/yuvraj108c/ComfyUI-Upscaler-Tensorrt)
+
 ## Quick Start (Docker)
 
 ```bash
